@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Maps Clone</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+<style>
+
+body{
+margin:0;
+font-family:system-ui,-apple-system;
+}
+
+#map{
+height:100vh;
+width:100%;
+}
+
+/* SEARCH BAR */
+
+.search-box{
+position:absolute;
+top:15px;
+left:50%;
+transform:translateX(-50%);
+width:90%;
+z-index:1000;
+}
+
+#searchInput{
+width:100%;
+padding:14px;
+border-radius:30px;
+border:none;
+outline:none;
+font-size:15px;
+box-shadow:0 4px 15px rgba(0,0,0,0.2);
+}
+
+#suggestions{
+background:white;
+border-radius:12px;
+margin-top:5px;
+max-height:200px;
+overflow-y:auto;
+}
+
+.s-item{
+padding:10px;
+cursor:pointer;
+}
+
+.s-item:hover{
+background:#eee;
+}
+
+/* ROUTE INFO */
+
+#routeInfo{
+position:absolute;
+top:85px;
+left:50%;
+transform:translateX(-50%);
+background:white;
+padding:8px 14px;
+border-radius:15px;
+box-shadow:0 4px 15px rgba(0,0,0,0.2);
+z-index:1000;
+font-size:14px;
+}
+
+/* LOCATION BUTTON */
+
+.loc-btn{
+position:absolute;
+bottom:160px;
+right:20px;
+width:50px;
+height:50px;
+border:none;
+border-radius:50%;
+background:white;
+font-size:20px;
+box-shadow:0 4px 15px rgba(0,0,0,0.25);
+cursor:pointer;
+z-index:1000;
+}
+
+/* BOTTOM PANEL */
+
+.bottom-sheet{
+position:absolute;
+bottom:0;
+width:100%;
+background:white;
+border-top-left-radius:25px;
+border-top-right-radius:25px;
+padding:18px;
+box-shadow:0 -4px 20px rgba(0,0,0,0.25);
+display:flex;
+flex-direction:column;
+gap:10px;
+z-index:1000;
+}
+
+.route-box{
+display:flex;
+flex-direction:column;
+gap:8px;
+}
+
+.route-box input{
+padding:12px;
+border-radius:10px;
+border:1px solid #ddd;
+font-size:14px;
+}
+
+.route-btn{
+padding:12px;
+border:none;
+border-radius:25px;
+background:#2b7cff;
+color:white;
+font-size:15px;
+cursor:pointer;
+}
+
+.action-row{
+display:flex;
+gap:10px;
+overflow-x:auto;
+}
+
+.action-row button{
+padding:10px 14px;
+border:none;
+border-radius:20px;
+background:#f1f1f1;
+font-size:14px;
+cursor:pointer;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div id="map"></div>
+
+<!-- SEARCH -->
+
+<div class="search-box">
+<input id="searchInput" placeholder="Search location" oninput="suggestPlaces()">
+<div id="suggestions"></div>
+</div>
+
+<div id="routeInfo"></div>
+
+<!-- LOCATION BUTTON -->
+
+<button class="loc-btn" onclick="getLocation()">📍</button>
+
+<!-- BOTTOM PANEL -->
+
+<div class="bottom-sheet">
+
+<div class="route-box">
+<input id="start" placeholder="Start location">
+<input id="end" placeholder="Destination">
+<button class="route-btn" onclick="getRoute()">🚗 Route</button>
+<button class="route-btn" onclick="startNavigation()">🧭 Start Navigation</button>
+</div>
+
+<div class="action-row">
+<button onclick="findPlaces('restaurant')">🍔 Food</button>
+<button onclick="findPlaces('hospital')">🏥 Hospital</button>
+<button onclick="findPlaces('cafe')">☕ Cafe</button>
+<button onclick="findPlaces('fuel')">⛽ Fuel</button>
+</div>
+
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+
+let map=L.map('map').setView([12.9716,77.5946],13);
+
+L.tileLayer(
+'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+).addTo(map);
+
+let marker;
+let routeLine;
+
+let navMarker;
+let routeCoords=[];
+let navIndex=0;
+
+/* SEARCH */
+
+async function searchPlace(name){
+
+let res=await fetch(
+"https://nominatim.openstreetmap.org/search?format=json&q="+name
+);
+
+let data=await res.json();
+
+if(!data.length) return;
+
+let lat=data[0].lat;
+let lon=data[0].lon;
+
+map.setView([lat,lon],13);
+
+if(marker) map.removeLayer(marker);
+
+marker=L.marker([lat,lon]).addTo(map);
+
+}
+
+/* SUGGESTIONS */
+
+async function suggestPlaces(){
+
+let q=document.getElementById("searchInput").value;
+
+if(q.length<3){
+document.getElementById("suggestions").innerHTML="";
+return;
+}
+
+let res=await fetch(
+"https://nominatim.openstreetmap.org/search?format=json&q="+q
+);
+
+let data=await res.json();
+
+let box=document.getElementById("suggestions");
+
+box.innerHTML="";
+
+data.slice(0,5).forEach(p=>{
+
+let div=document.createElement("div");
+
+div.className="s-item";
+
+div.innerText=p.display_name;
+
+div.onclick=()=>{
+searchPlace(p.display_name);
+box.innerHTML="";
+};
+
+box.appendChild(div);
+
+});
+
+}
+
+/* LOCATION */
+
+function getLocation(){
+
+navigator.geolocation.getCurrentPosition(pos=>{
+
+let lat=pos.coords.latitude;
+let lon=pos.coords.longitude;
+
+map.setView([lat,lon],14);
+
+if(marker) map.removeLayer(marker);
+
+marker=L.marker([lat,lon]).addTo(map);
+
+});
+
+}
+
+/* ROUTE */
+
+async function getRoute(){
+
+let start=document.getElementById("start").value;
+let end=document.getElementById("end").value;
+
+let s=await fetch(
+"https://nominatim.openstreetmap.org/search?format=json&q="+start
+);
+
+let sj=await s.json();
+
+let e=await fetch(
+"https://nominatim.openstreetmap.org/search?format=json&q="+end
+);
+
+let ej=await e.json();
+
+if(!sj.length||!ej.length) return;
+
+let route=await fetch(
+
+"https://router.project-osrm.org/route/v1/driving/"
++sj[0].lon+","+sj[0].lat+";"
++ej[0].lon+","+ej[0].lat
++"?overview=full&geometries=geojson"
+
+);
+
+let data=await route.json();
+
+let r=data.routes[0];
+
+let km=(r.distance/1000).toFixed(1);
+let min=(r.duration/60).toFixed(0);
+
+document.getElementById("routeInfo").innerText=
+"Distance "+km+" km | Time "+min+" min";
+
+routeCoords=r.geometry.coordinates.map(c=>[c[1],c[0]]);
+
+if(routeLine) map.removeLayer(routeLine);
+
+routeLine=L.polyline(routeCoords,{color:"blue"}).addTo(map);
+
+map.fitBounds(routeLine.getBounds());
+
+}
+
+/* NAVIGATION */
+
+function startNavigation(){
+
+if(routeCoords.length==0){
+alert("Generate route first");
+return;
+}
+
+if(navMarker){
+map.removeLayer(navMarker);
+}
+
+navIndex=0;
+
+navMarker=L.marker(routeCoords[0]).addTo(map);
+
+let interval=setInterval(()=>{
+
+if(navIndex>=routeCoords.length){
+clearInterval(interval);
+return;
+}
+
+navMarker.setLatLng(routeCoords[navIndex]);
+
+map.panTo(routeCoords[navIndex]);
+
+navIndex++;
+
+},500);
+
+}
+
+/* NEARBY */
+
+async function findPlaces(type){
+
+let center=map.getCenter();
+
+let query=
+`[out:json];
+node["amenity"="${type}"](around:2000,${center.lat},${center.lng});
+out;`;
+
+let url="https://overpass-api.de/api/interpreter?data="+encodeURIComponent(query);
+
+let res=await fetch(url);
+let data=await res.json();
+
+data.elements.forEach(p=>{
+L.marker([p.lat,p.lon]).addTo(map)
+.bindPopup(p.tags.name||type);
+});
+
+}
+
+/* MAP CLICK */
+
+map.on("click",async e=>{
+
+if(marker) map.removeLayer(marker);
+
+marker=L.marker([e.latlng.lat,e.latlng.lng]).addTo(map);
+
+let r=await fetch(
+"https://nominatim.openstreetmap.org/reverse?format=json&lat="
++e.latlng.lat+"&lon="+e.latlng.lng
+);
+
+let d=await r.json();
+
+marker.bindPopup(d.display_name).openPopup();
+
+});
+
+</script>
+
+</body>
+</html>
